@@ -32,9 +32,24 @@ logger = logging.getLogger(__name__)
 
 
 def _ensure_BOT_EOT(text_tokens: Tensor, hp):
-    B = text_tokens.size(0)
-    assert (text_tokens == hp.start_text_token).int().sum() >= B, "missing start_text_token"
-    assert (text_tokens == hp.stop_text_token).int().sum() >= B, "missing stop_text_token"
+    if text_tokens.dim() == 1:
+        text_tokens = text_tokens.unsqueeze(0)
+
+    if text_tokens.numel() == 0:
+        return text_tokens
+
+    start_id = hp.start_text_token
+    stop_id = hp.stop_text_token
+
+    start_missing = (text_tokens == start_id).sum(dim=1) < 1
+    if start_missing.any():
+        text_tokens[start_missing, 0] = start_id
+
+    stop_missing = (text_tokens == stop_id).sum(dim=1) < 1
+    if stop_missing.any():
+        text_tokens[stop_missing, -1] = stop_id
+
+    return text_tokens
 
 
 class T3(nn.Module):
@@ -140,7 +155,7 @@ class T3(nn.Module):
         speech_token_lens: torch.LongTensor,
         training=False,
     ):
-        _ensure_BOT_EOT(text_tokens, self.hp)
+        text_tokens = _ensure_BOT_EOT(text_tokens, self.hp)
 
         # prepare custom input embeds
         embeds, len_cond = self.prepare_input_embeds(

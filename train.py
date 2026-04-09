@@ -26,6 +26,10 @@ logger = setup_logger("ChatterboxFinetune")
 def main():
     
     cfg = TrainConfig()
+
+    if cfg.force_single_gpu:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.single_gpu_id)
+        logger.info(f"force_single_gpu enabled -> CUDA_VISIBLE_DEVICES={cfg.single_gpu_id}")
     
     logger.info("--- Starting Chatterbox Finetuning ---")
     logger.info(f"Mode: {'CHATTERBOX-TURBO' if cfg.is_turbo else 'CHATTERBOX-TTS'}")
@@ -170,7 +174,14 @@ def main():
     )
 
     logger.info("Starting Training Loop...")
-    trainer.train()
+    resume_path = cfg.resume_from_checkpoint if getattr(cfg, "resume_from_checkpoint", None) else None
+    if resume_path and os.path.exists(resume_path):
+        logger.info(f"Resuming training from checkpoint: {resume_path}")
+    elif resume_path:
+        logger.warning(f"resume_from_checkpoint not found: {resume_path}. Starting from scratch.")
+        resume_path = None
+
+    trainer.train(resume_from_checkpoint=resume_path)
 
 
     # 8. SAVE FINAL MODEL

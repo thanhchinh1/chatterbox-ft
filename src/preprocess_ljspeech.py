@@ -3,11 +3,21 @@ import torch
 import torchaudio
 import pandas as pd
 from tqdm import tqdm
-from src.chatterbox_.tts import ChatterboxTTS, punc_norm
-from src.chatterbox_.tts_turbo import ChatterboxTurboTTS
-from src.chatterbox_.models.s3tokenizer import S3_SR
-from src.utils import setup_logger
-from src.config import TrainConfig
+
+try:
+    # Works when running as module: `python -m src.preprocess_ljspeech`
+    from src.chatterbox_.tts import ChatterboxTTS, punc_norm
+    from src.chatterbox_.tts_turbo import ChatterboxTurboTTS
+    from src.chatterbox_.models.s3tokenizer import S3_SR
+    from src.utils import setup_logger
+    from src.config import TrainConfig
+except ModuleNotFoundError:
+    # Works when running as script: `python src/preprocess_ljspeech.py`
+    from chatterbox_.tts import ChatterboxTTS, punc_norm
+    from chatterbox_.tts_turbo import ChatterboxTurboTTS
+    from chatterbox_.models.s3tokenizer import S3_SR
+    from utils import setup_logger
+    from config import TrainConfig
 
 
 logger = setup_logger(__name__)

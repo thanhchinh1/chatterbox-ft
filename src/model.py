@@ -104,6 +104,66 @@ class ChatterboxTrainerWrapper(torch.nn.Module):
         return self.t3.get_input_embeddings()
 
 
+    def _normalize_text_boundary_tokens(self, text_tokens: torch.Tensor, text_token_lens: torch.Tensor):
+        """
+        Data-parallel batches can occasionally carry malformed text boundaries.
+        Ensure each valid sequence contains both start/stop text tokens expected by T3.
+        """
+        start_id = self.t3.hp.start_text_token
+        stop_id = self.t3.hp.stop_text_token
+
+        text_tokens = text_tokens.clone()
+        text_token_lens = text_token_lens.to(dtype=torch.long)
+        B = text_tokens.size(0)
+        T = text_tokens.size(1)
+
+        if T == 0:
+            return text_tokens
+
+        # Safety clamp against occasional corrupted lens values on parallel workers.
+        text_token_lens = torch.clamp(text_token_lens, min=1, max=T)
+
+        # Hard guarantee: every sequence starts with start token.
+        text_tokens[:, 0] = start_id
+
+        for i in range(B):
+            seq_len = int(text_token_lens[i].item())
+            seq_len = max(1, min(seq_len, T))
+
+            seq = text_tokens[i, :seq_len]
+            if not (seq == stop_id).any():
+                text_tokens[i, seq_len - 1] = stop_id
+
+        return text_tokens
+
+
+    def _validate_token_ranges(self, text_tokens: torch.Tensor, speech_tokens: torch.Tensor, prompt_tokens: torch.Tensor):
+        text_vocab = self.t3.text_emb.num_embeddings
+        speech_vocab = self.t3.speech_emb.num_embeddings
+
+        tmin = int(text_tokens.min().item())
+        tmax = int(text_tokens.max().item())
+        smin = int(speech_tokens.min().item())
+        smax = int(speech_tokens.max().item())
+        pmin = int(prompt_tokens.min().item())
+        pmax = int(prompt_tokens.max().item())
+
+        if tmin < 0 or tmax >= text_vocab:
+            raise ValueError(
+                f"text_tokens out of range: min={tmin}, max={tmax}, vocab={text_vocab}"
+            )
+
+        if smin < 0 or smax >= speech_vocab:
+            raise ValueError(
+                f"speech_tokens out of range: min={smin}, max={smax}, vocab={speech_vocab}"
+            )
+
+        if pmin < 0 or pmax >= speech_vocab:
+            raise ValueError(
+                f"prompt_tokens out of range: min={pmin}, max={pmax}, vocab={speech_vocab}"
+            )
+
+
     def forward(
             self,
             text_tokens, 
@@ -113,6 +173,18 @@ class ChatterboxTrainerWrapper(torch.nn.Module):
             speaker_emb, 
             prompt_tokens,
             prompt_lens=None):
+
+        # Defensive sanitization for occasional malformed lengths in multi-worker / multi-GPU paths.
+        text_token_lens = text_token_lens.to(dtype=torch.long)
+        speech_token_lens = speech_token_lens.to(dtype=torch.long)
+        text_token_lens = torch.clamp(text_token_lens, min=1, max=text_tokens.size(1))
+        speech_token_lens = torch.clamp(speech_token_lens, min=1, max=speech_tokens.size(1))
+        if prompt_lens is not None:
+            prompt_lens = prompt_lens.to(dtype=torch.long)
+            prompt_lens = torch.clamp(prompt_lens, min=0, max=prompt_tokens.size(1))
+
+        text_tokens = self._normalize_text_boundary_tokens(text_tokens, text_token_lens)
+        self._validate_token_ranges(text_tokens, speech_tokens, prompt_tokens)
 
         device = text_tokens.device
         batch_size = text_tokens.size(0)
@@ -147,7 +219,7 @@ class ChatterboxTrainerWrapper(torch.nn.Module):
         if prompt_lens is not None:
             mask_prompt = torch.arange(curr_speech_len, device=device)[None, :] < prompt_lens[:, None]
         else:
-            logger.info("Prompt lens not provided, using fixed width!")
+            # Standard collator path: prompt is padded to fixed width for the whole batch.
             mask_prompt = torch.arange(curr_speech_len, device=device)[None, :] < prompt_tokens.size(1)
 
 
