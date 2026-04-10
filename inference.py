@@ -4,6 +4,7 @@ import numpy as np
 import soundfile as sf
 import random
 import re
+from pathlib import Path
 from safetensors.torch import load_file
 
 
@@ -27,7 +28,7 @@ OUTPUT_DIR = cfg.output_dir
 
 if IS_TURBO:
     
-    FINETUNED_WEIGHTS = os.path.join(OUTPUT_DIR, "t3_turbo_finetuned.safetensors")
+    FINETUNED_WEIGHTS = os.path.join(OUTPUT_DIR, "chatterbox_output/checkpoint-60500/model.safetensors")
     PARAMS = {
         "temperature": 0.8,
         "exaggeration": 0.5,
@@ -44,8 +45,63 @@ else:
     }
 
 
-TEXT_TO_SAY = "Bu, artık hem normal hem de turbo modelleri otomatik olarak destekleyen yeni çıkarım komut dosyasının bir testidir."
-AUDIO_PROMPT = "./reference.wav"
+def resolve_weights_path() -> str:
+    """Resolve inference weights with fallback order: env -> final -> resume ckpt -> latest ckpt."""
+    env_path = os.getenv("INFER_WEIGHTS")
+    if env_path and os.path.exists(env_path):
+        logger.info(f"Using weights from INFER_WEIGHTS: {env_path}")
+        return env_path
+
+    if os.path.exists(FINETUNED_WEIGHTS):
+        return FINETUNED_WEIGHTS
+
+    # Fallback to configured training resume checkpoint.
+    resume_ckpt = getattr(cfg, "resume_from_checkpoint", None)
+    if resume_ckpt:
+        resume_model = os.path.join(resume_ckpt, "model.safetensors")
+        if os.path.exists(resume_model):
+            logger.warning(
+                f"Final weights not found. Falling back to resume checkpoint weights: {resume_model}"
+            )
+            return resume_model
+
+    # Fallback to latest checkpoint under output dir.
+    ckpts = sorted(Path(OUTPUT_DIR).glob("checkpoint-*"), key=lambda p: int(p.name.split("-")[-1]))
+    if ckpts:
+        latest_model = ckpts[-1] / "model.safetensors"
+        if latest_model.exists():
+            logger.warning(
+                f"Final weights not found. Falling back to latest checkpoint weights: {latest_model}"
+            )
+            return str(latest_model)
+
+    raise FileNotFoundError(
+        f"No inference weights found. Checked: {FINETUNED_WEIGHTS}, resume checkpoint, and latest checkpoint."
+    )
+
+
+def normalize_t3_state_dict_keys(state_dict: dict) -> dict:
+    """Convert wrapped checkpoint keys (e.g. t3.* / module.t3.*) to plain T3 keys."""
+    keys = list(state_dict.keys())
+    if not keys:
+        return state_dict
+
+    normalized = {}
+    for k, v in state_dict.items():
+        nk = k
+        if nk.startswith("module.t3."):
+            nk = nk[len("module.t3.") :]
+        elif nk.startswith("t3."):
+            nk = nk[len("t3.") :]
+        elif nk.startswith("module."):
+            nk = nk[len("module.") :]
+        normalized[nk] = v
+
+    return normalized
+
+
+TEXT_TO_SAY = "Tôi tên là chấn thành đây là giọng của tôi, tôi là mộ diễ viên, tôi đang thử clone giọng "
+AUDIO_PROMPT = "speaker_reference/chanthanh.wav"
 OUTPUT_FILE = "./output.wav"
 
 
@@ -75,15 +131,12 @@ def load_finetuned_engine(device):
         if hasattr(new_t3.tfmr, "wte"):
             del new_t3.tfmr.wte
     
-    if os.path.exists(FINETUNED_WEIGHTS):
-        logger.info(f"Loading fine-tuned weights: {FINETUNED_WEIGHTS}")
-        state_dict = load_file(FINETUNED_WEIGHTS, device="cpu")
-        new_t3.load_state_dict(state_dict, strict=True)
-        logger.info("Fine-tuned weights loaded successfully.")
-    else:
-        logger.error(f"FATAL: Fine-tuned file not found at {FINETUNED_WEIGHTS}.")
-        logger.error("Please ensure you have a trained model before running inference.")
-        raise FileNotFoundError(FINETUNED_WEIGHTS)
+    weights_path = resolve_weights_path()
+    logger.info(f"Loading fine-tuned weights: {weights_path}")
+    state_dict = load_file(weights_path, device="cpu")
+    state_dict = normalize_t3_state_dict_keys(state_dict)
+    new_t3.load_state_dict(state_dict, strict=True)
+    logger.info("Fine-tuned weights loaded successfully.")
 
     tts_engine.t3 = new_t3
     
