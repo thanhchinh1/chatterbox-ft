@@ -89,6 +89,17 @@ chatterbox-finetune/
 
 ## 🚀 Installation
 
+### 0. Create a completely new repository from this codebase (optional)
+
+If you want a brand-new git repository (clean history) based on this project:
+
+```bash
+chmod +x scripts/create_fresh_repo.sh
+./scripts/create_fresh_repo.sh /absolute/path/to/your-new-repo
+```
+
+The script copies project files, initializes a new git repository, and creates an initial commit.
+
 ### 1. Install Dependencies
 Requires Python 3.8+ and GPU (recommended):
 
