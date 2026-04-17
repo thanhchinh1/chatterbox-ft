@@ -16,4 +16,7 @@ omegaconf
 hf_transfer
 pyloudnorm
 gdown
-g2pV
+vinorm
+underthesea
+eng_to_ipa
+viphoneme

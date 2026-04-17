@@ -2,33 +2,73 @@ import re
 from typing import Optional
 
 
-_ALLOWED_RE = re.compile(r"[^a-z0-9 .,'-]")
+_ALLOWED_RE = re.compile(
+    r"[^a-z0-9 àáảãạăằắẳẵặâầấẩẫậđèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ.,'!?-]"
+)
 
 try:
-    from g2pV import G2p  # type: ignore
+    from viphoneme import vi2IPA  # type: ignore
 
-    _G2P = G2p()
+    _VI2IPA = vi2IPA
 except Exception:
-    _G2P = None
+    _VI2IPA = None
 
 
 def is_g2p_available() -> bool:
-    return _G2P is not None
+    return _VI2IPA is not None
+
+
+_IPA_REPLACEMENTS = [
+    ("tʰ", "th"),
+    ("kʰ", "kh"),
+    ("pʰ", "ph"),
+    ("cʰ", "ch"),
+    ("ɯ", "ư"),
+    ("ɤ", "ơ"),
+    ("ə", "â"),
+    ("ɐ", "â"),
+    ("ɔ", "o"),
+    ("ɒ", "o"),
+    ("ɪ", "i"),
+    ("ʊ", "u"),
+    ("ʌ", "â"),
+    ("ŋ", "ng"),
+    ("ɲ", "nh"),
+    ("ʂ", "s"),
+    ("ʃ", "s"),
+    ("ʈ", "t"),
+    ("ʒ", "d"),
+    ("ɡ", "g"),
+    ("ʔ", ""),
+    ("ʰ", ""),
+    ("ˈ", ""),
+    ("ˌ", ""),
+    ("ː", ""),
+    ("ˑ", ""),
+    ("͡", ""),
+    ("̃", ""),
+    ("̈", ""),
+]
+
+
+def _ipa_to_vi_text(text: str) -> str:
+    text = text.replace("_", " ")
+    for src, dst in _IPA_REPLACEMENTS:
+        text = text.replace(src, dst)
+    return text
 
 
 def g2p_vi(text: str) -> Optional[str]:
-    if _G2P is None:
+    if _VI2IPA is None:
         return None
 
     try:
-        out = _G2P(text)
+        out = _VI2IPA(text)
     except Exception:
         return None
 
-    if isinstance(out, list):
-        out = " ".join(str(tok) for tok in out)
-    else:
-        out = str(out)
+    out = str(out)
+    out = _ipa_to_vi_text(out)
 
     out = out.lower().strip()
     out = _ALLOWED_RE.sub(" ", out)
