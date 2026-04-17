@@ -2,27 +2,13 @@ import os
 import requests
 import sys
 import json
+import shutil
 from tqdm import tqdm
-from transformers import AutoTokenizer
 from src.config import TrainConfig
 
 
 DEST_DIR = "pretrained_models"
  
-CHATTERBOX_TURBO_FILES = {
-    "ve.safetensors": "https://huggingface.co/ResembleAI/chatterbox-turbo/resolve/main/ve.safetensors?download=true",
-    "t3_turbo_v1.safetensors": "https://huggingface.co/ResembleAI/chatterbox-turbo/resolve/main/t3_turbo_v1.safetensors?download=true",
-    "s3gen_meanflow.safetensors": "https://huggingface.co/ResembleAI/chatterbox-turbo/resolve/main/s3gen_meanflow.safetensors?download=true",
-    "conds.pt": "https://huggingface.co/ResembleAI/chatterbox-turbo/resolve/main/conds.pt?download=true",
-    "vocab.json": "https://huggingface.co/ResembleAI/chatterbox-turbo/resolve/main/vocab.json?download=true",
-    "added_tokens.json": "https://huggingface.co/ResembleAI/chatterbox-turbo/resolve/main/added_tokens.json?download=true",
-    "special_tokens_map.json": "https://huggingface.co/ResembleAI/chatterbox-turbo/resolve/main/special_tokens_map.json?download=true",
-    "tokenizer_config.json": "https://huggingface.co/ResembleAI/chatterbox-turbo/resolve/main/tokenizer_config.json?download=true",
-    "merges.txt": "https://huggingface.co/ResembleAI/chatterbox-turbo/resolve/main/merges.txt?download=true",
-    "grapheme_mtl_merged_expanded_v1.json": "https://huggingface.co/ResembleAI/chatterbox/resolve/main/grapheme_mtl_merged_expanded_v1.json?download=true"
-}
-
-
 CHATTERBOX_FILES = {
     "ve.safetensors": "https://huggingface.co/ResembleAI/chatterbox/resolve/main/ve.safetensors?download=true",
     "t3_cfg.safetensors": "https://huggingface.co/ResembleAI/chatterbox/resolve/main/t3_cfg.safetensors?download=true",
@@ -30,6 +16,8 @@ CHATTERBOX_FILES = {
     "conds.pt": "https://huggingface.co/ResembleAI/chatterbox/resolve/main/conds.pt?download=true",
     "tokenizer.json": "https://huggingface.co/ResembleAI/chatterbox/resolve/main/grapheme_mtl_merged_expanded_v1.json?download=true"
 }
+
+VIETNAMESE_TOKENIZER_SOURCE = "tokenizer.json"
 
 def download_file(url, dest_path):
     """Downloads a file from a URL to a specific destination with a progress bar."""
@@ -70,80 +58,33 @@ def download_file(url, dest_path):
 
 
 
-def merge_and_save_turbo_tokenizer():
+def apply_vietnamese_only_tokenizer(dest_dir: str) -> int:
     """
-    It combines the downloaded original GPT-2 tokenizer with our custom vocab
-    and overwrites the original files.
+    Replaces tokenizer.json under pretrained models with the repository's
+    Vietnamese-only tokenizer definition and returns its vocab size.
     """
-    print("\n--- Turbo Vocab Merging Begins ---")
-    
-    try:
-        base_tokenizer = AutoTokenizer.from_pretrained("gpt2-medium")
-    except Exception as e:
-        print(f"ERROR: The original tokenizer could not be loaded. Did you download the files correctly? -> {e}")
-        return 0
-        
-        
-    initial_len = len(base_tokenizer)
-    print(f"   Original Size: {initial_len}")
+    if not os.path.exists(VIETNAMESE_TOKENIZER_SOURCE):
+        print(
+            f"ERROR: Vietnamese tokenizer source not found: {VIETNAMESE_TOKENIZER_SOURCE}"
+        )
+        sys.exit(1)
 
+    destination = os.path.join(dest_dir, "tokenizer.json")
+    shutil.copyfile(VIETNAMESE_TOKENIZER_SOURCE, destination)
 
-    custom_vocab_path = os.path.join(DEST_DIR, "grapheme_mtl_merged_expanded_v1.json")
-    
-    print(f"Loading: Custom Vocab ({custom_vocab_path})")
-    
-    with open(custom_vocab_path, 'r', encoding='utf-8') as f:
-        custom_data = json.load(f)
+    with open(destination, "r", encoding="utf-8") as f:
+        tokenizer_data = json.load(f)
 
+    vocab_size = len(tokenizer_data.get("model", {}).get("vocab", {}))
+    if vocab_size == 0:
+        print("ERROR: Vietnamese tokenizer vocab is empty.")
+        sys.exit(1)
 
-    if "model" in custom_data and "vocab" in custom_data["model"]:
-        vocab_dict = custom_data["model"]["vocab"]
-        
-    else:
-        print("Warning: The custom VOCAB format may differ from what is expected.")
-        return 0
-
-    unique_tokens_to_add = list(vocab_dict.keys())
-    added_count = base_tokenizer.add_tokens(unique_tokens_to_add)
-    final_len = len(base_tokenizer)
-
-    print(f"Merging: {added_count} new token added.")
-    print(f"   New Dimension: {final_len}")
-
-
-    print(f"Saving: Writing the combined tokenizer to the '{DEST_DIR}' folder...")
-    base_tokenizer.save_pretrained(DEST_DIR)
-    
-    print("MERGER SUCCESSFUL!")
-    
-    return final_len
-
-
-
-def test_merge_tokenizer_process(tokenizer_path):
-    
-    try:
-
-        tok = AutoTokenizer.from_pretrained(tokenizer_path)
-        
-        print(f"--- RESULTS ---")
-        print(f"Folder: {tokenizer_path}")
-        print(f"Actual Vocab Size (len): {len(tok)}")
-
-        test_token = "[ta]"
-        test_id = tok.encode(test_token, add_special_tokens=False)
-        
-        print(f"Test Token '{test_token}' ID: {test_id}")
-        
-        if len(tok) > 50276:
-            print("SUCCESS! New tokens have been added.")
-            
-        else:
-            print("ERROR: The size still appears old.")
-
-
-    except Exception as e:
-        print(f"Error: {e}")
+    print("\n--- Vietnamese-only Tokenizer Applied ---")
+    print(f"Source: {VIETNAMESE_TOKENIZER_SOURCE}")
+    print(f"Destination: {destination}")
+    print(f"Vocab size: {vocab_size}")
+    return vocab_size
 
 
 
@@ -163,37 +104,32 @@ def main():
         
 
     cfg = TrainConfig()
-
     if cfg.is_turbo:
-        print(f"Mode: CHATTERBOX-TURBO (Checking {len(CHATTERBOX_TURBO_FILES)} files)")
-        FILES_TO_DOWNLOAD = CHATTERBOX_TURBO_FILES
-        
-    else:
-        print(f"Mode: CHATTERBOX-TTS (Checking {len(CHATTERBOX_FILES)} files)")
-        FILES_TO_DOWNLOAD = CHATTERBOX_FILES
+        print("ERROR: This fork only supports Standard (Llama/grapheme) model.")
+        print("Please set is_turbo=False in src/config.py")
+        sys.exit(1)
+
+    print(f"Mode: CHATTERBOX-TTS (Standard only, {len(CHATTERBOX_FILES)} files)")
+    FILES_TO_DOWNLOAD = CHATTERBOX_FILES
 
     # 2. Download files
     for filename, url in FILES_TO_DOWNLOAD.items():
         dest_path = os.path.join(DEST_DIR, filename)
         download_file(url, dest_path)
 
-    if cfg.is_turbo:
-        new_vocab_size = merge_and_save_turbo_tokenizer()
-        if new_vocab_size > 0:
-            
-            #test_merge_tokenizer_process(DEST_DIR)
-
-            print("\n" + "="*60)
-            print("INSTALLATION COMPLETE (CHATTERBOX-TURBO MODE)")
-            print("All models are set up in 'pretrained_models/' folder.")
-            print(f"Please update the 'new_vocab_size' value in the 'src/config.py' file")
-            print(f"to: {new_vocab_size}")
-            print("="*60 + "\n")
-
-    else:
-        print("\nINSTALLATION COMPLETE (CHATTERBOX-TTS MOD)")
+    if cfg.vietnamese_only:
+        vn_vocab_size = apply_vietnamese_only_tokenizer(DEST_DIR)
+        print("\n" + "="*60)
+        print("INSTALLATION COMPLETE (VIETNAMESE-ONLY MODE)")
         print("All models are set up in 'pretrained_models/' folder.")
-        print(f"Note: 'grapheme_mtl_merged_expanded_v1.json' was saved as 'tokenizer.json' for the new vocabulary.")
+        print("Please set 'new_vocab_size' in 'src/config.py' to:")
+        print(f" {vn_vocab_size}")
+        print("="*60 + "\n")
+        return
+
+    print("\nINSTALLATION COMPLETE (CHATTERBOX-TTS MOD)")
+    print("All models are set up in 'pretrained_models/' folder.")
+    print(f"Note: 'grapheme_mtl_merged_expanded_v1.json' was saved as 'tokenizer.json' for the new vocabulary.")
 
 
 

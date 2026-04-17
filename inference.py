@@ -11,7 +11,6 @@ from safetensors.torch import load_file
 from src.utils import setup_logger, trim_silence_with_vad
 from src.config import TrainConfig
 from src.chatterbox_.tts import ChatterboxTTS
-from src.chatterbox_.tts_turbo import ChatterboxTurboTTS
 from src.chatterbox_.models.t3.t3 import T3
 
 
@@ -21,28 +20,19 @@ logger = setup_logger("Chatterbox-Inference")
 cfg = TrainConfig()
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-IS_TURBO = cfg.is_turbo
 BASE_MODEL_DIR = cfg.model_dir
 OUTPUT_DIR = cfg.output_dir
 
+if cfg.is_turbo:
+    raise ValueError("This fork supports Standard (Llama/grapheme) mode only. Set is_turbo=False.")
 
-if IS_TURBO:
-    
-    FINETUNED_WEIGHTS = os.path.join(OUTPUT_DIR, "chatterbox_output/checkpoint-60500/model.safetensors")
-    PARAMS = {
-        "temperature": 0.8,
-        "exaggeration": 0.5,
-        "repetition_penalty": 1.2,
-    }
-else:
-    
-    FINETUNED_WEIGHTS = os.path.join(OUTPUT_DIR, "t3_finetuned.safetensors")
-    PARAMS = {
-        "temperature": 0.8,
-        "exaggeration": 0.5,
-        "cfg_weight": 0.5,
-        "repetition_penalty": 1.2,
-    }
+FINETUNED_WEIGHTS = os.path.join(OUTPUT_DIR, "t3_finetuned.safetensors")
+PARAMS = {
+    "temperature": 0.8,
+    "exaggeration": 0.5,
+    "cfg_weight": 0.5,
+    "repetition_penalty": 1.2,
+}
 
 
 def resolve_weights_path() -> str:
@@ -112,10 +102,10 @@ def load_finetuned_engine(device):
     with the fine-tuned version.
     """
     
-    logger.info(f"Loading in {'TURBO' if IS_TURBO else 'NORMAL'} mode.")
+    logger.info("Loading in STANDARD mode.")
     logger.info(f"Loading base model from: {BASE_MODEL_DIR}")
 
-    EngineClass = ChatterboxTurboTTS if IS_TURBO else ChatterboxTTS
+    EngineClass = ChatterboxTTS
 
     tts_engine = EngineClass.from_local(BASE_MODEL_DIR, device="cpu")
     
@@ -126,11 +116,6 @@ def load_finetuned_engine(device):
   
     new_t3 = T3(hp=t3_config)
 
-    if IS_TURBO:
-        logger.info("Turbo Mode: Removing 'wte' layer from new T3 model to match fine-tuned state.")
-        if hasattr(new_t3.tfmr, "wte"):
-            del new_t3.tfmr.wte
-    
     weights_path = resolve_weights_path()
     logger.info(f"Loading fine-tuned weights: {weights_path}")
     state_dict = load_file(weights_path, device="cpu")

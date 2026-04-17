@@ -5,17 +5,14 @@ from transformers import Trainer, TrainingArguments
 from safetensors.torch import save_file
 
 from src.config import TrainConfig
-from src.dataset import ChatterboxDataset, data_collator_turbo, data_collator_standart
+from src.dataset import ChatterboxDataset, data_collator_standart
 from src.model import resize_and_load_t3_weights, ChatterboxTrainerWrapper
 from src.preprocess_ljspeech import preprocess_dataset_ljspeech
-from src.preprocess_file_based import preprocess_dataset_file_based
-from src.preprocess_json import preprocess_dataset_json_based
 from src.utils import setup_logger, check_pretrained_models
 
 from src.inference_callback import InferenceCallback
 
 from src.chatterbox_.tts import ChatterboxTTS
-from src.chatterbox_.tts_turbo import ChatterboxTurboTTS
 from src.chatterbox_.models.t3.t3 import T3
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -26,26 +23,24 @@ logger = setup_logger("ChatterboxFinetune")
 def main():
     
     cfg = TrainConfig()
+    if cfg.is_turbo:
+        raise ValueError("This fork supports Standard (Llama/grapheme) mode only. Set is_turbo=False.")
 
     if cfg.force_single_gpu:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.single_gpu_id)
         logger.info(f"force_single_gpu enabled -> CUDA_VISIBLE_DEVICES={cfg.single_gpu_id}")
     
     logger.info("--- Starting Chatterbox Finetuning ---")
-    logger.info(f"Mode: {'CHATTERBOX-TURBO' if cfg.is_turbo else 'CHATTERBOX-TTS'}")
+    logger.info("Mode: CHATTERBOX-TTS (Standard only)")
 
     # 0. CHECK MODEL FILES
-    mode_check = "chatterbox_turbo" if cfg.is_turbo else "chatterbox"
-    if not check_pretrained_models(mode=mode_check):
+    if not check_pretrained_models(mode="chatterbox"):
         sys.exit(1)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    # 1. SELECT THE CORRECT ENGINE CLASS
-    if cfg.is_turbo:
-        EngineClass = ChatterboxTurboTTS
-    else:
-        EngineClass = ChatterboxTTS
+    # 1. Standard-only engine class
+    EngineClass = ChatterboxTTS
     
     logger.info(f"Device: {device}")
     logger.info(f"Model Directory: {cfg.model_dir}")
@@ -77,13 +72,6 @@ def main():
     new_t3_model = resize_and_load_t3_weights(new_t3_model, pretrained_t3_state_dict)
 
 
-    # --- SPECIAL SETTING FOR TURBO ---
-    if cfg.is_turbo:
-        logger.info("Turbo Mode: Removing backbone WTE layer...")
-        if hasattr(new_t3_model.tfmr, "wte"):
-            del new_t3_model.tfmr.wte
-
-
     # Clean up memory
     del tts_engine_original
     del pretrained_t3_state_dict
@@ -107,17 +95,8 @@ def main():
         param.requires_grad = True
 
     if cfg.preprocess:
-        
-        logger.info("Initializing Preprocess dataset...")
-        
-        if cfg.ljspeech:
-            preprocess_dataset_ljspeech(cfg, tts_engine_new)
-            
-        elif cfg.json_format:
-            preprocess_dataset_json_based(cfg, tts_engine_new)
-            
-        else:
-            preprocess_dataset_file_based(cfg, tts_engine_new)
+        logger.info("Initializing LJSpeech preprocessing...")
+        preprocess_dataset_ljspeech(cfg, tts_engine_new)
       
     else:
         logger.info("Skipping the preprocessing dataset step...")
@@ -136,12 +115,8 @@ def main():
     model_wrapper = ChatterboxTrainerWrapper(tts_engine_new.t3)
 
 
-    if cfg.is_turbo:
-        logger.info("Using Turbo Data Collator (with dynamic prompt masking)")
-        selected_collator = data_collator_turbo
-    else:
-        logger.info("Using Standard Data Collator")
-        selected_collator = data_collator_standart
+    logger.info("Using Standard Data Collator")
+    selected_collator = data_collator_standart
 
 
     # 7. TRAINING ARGUMENTS
@@ -188,7 +163,7 @@ def main():
     logger.info("Training complete. Saving model...")
     os.makedirs(cfg.output_dir, exist_ok=True)
     
-    filename = "t3_turbo_finetuned.safetensors" if cfg.is_turbo else "t3_finetuned.safetensors"
+    filename = "t3_finetuned.safetensors"
     final_model_path = os.path.join(cfg.output_dir, filename)
 
     save_file(tts_engine_new.t3.state_dict(), final_model_path)
