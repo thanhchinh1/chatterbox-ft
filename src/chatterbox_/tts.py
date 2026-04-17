@@ -15,6 +15,7 @@ from .models.s3gen import S3GEN_SR, S3Gen
 from .models.tokenizers import EnTokenizer
 from .models.voice_encoder import VoiceEncoder
 from .models.t3.modules.cond_enc import T3Cond
+from .text_normalizer import normalize_vi_text
 
 
 REPO_ID = "ResembleAI/chatterbox"
@@ -219,6 +220,10 @@ class ChatterboxTTS:
         exaggeration=0.5,
         cfg_weight=0.5,
         temperature=0.8,
+        use_phoneme=True,
+        use_g2p=True,
+        normalize_numbers=True,
+        normalize_abbrev=True,
     ):
         if audio_prompt_path:
             self.prepare_conditionals(audio_prompt_path, exaggeration=exaggeration)
@@ -236,7 +241,25 @@ class ChatterboxTTS:
 
         # Norm and tokenize text
         text = punc_norm(text)
+        text = normalize_vi_text(
+            text,
+            use_phoneme=use_phoneme,
+            use_g2p=use_g2p,
+            expand_numbers=normalize_numbers,
+            expand_abbrev=normalize_abbrev,
+        )
         text_tokens = self.tokenizer.text_to_tokens(text).to(self.device)
+
+        if hasattr(self.tokenizer, "has_unk_ids") and self.tokenizer.has_unk_ids(text_tokens):
+            if use_g2p:
+                text = normalize_vi_text(
+                    text,
+                    use_phoneme=use_phoneme,
+                    use_g2p=False,
+                    expand_numbers=normalize_numbers,
+                    expand_abbrev=normalize_abbrev,
+                )
+                text_tokens = self.tokenizer.text_to_tokens(text).to(self.device)
 
         if cfg_weight > 0.0:
             text_tokens = torch.cat([text_tokens, text_tokens], dim=0)  # Need two seqs for CFG

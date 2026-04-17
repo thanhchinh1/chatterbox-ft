@@ -23,8 +23,6 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 BASE_MODEL_DIR = cfg.model_dir
 OUTPUT_DIR = cfg.output_dir
 
-if cfg.is_turbo:
-    raise ValueError("This fork supports Standard (Llama/grapheme) mode only. Set is_turbo=False.")
 
 FINETUNED_WEIGHTS = os.path.join(OUTPUT_DIR, "t3_finetuned.safetensors")
 PARAMS = {
@@ -32,6 +30,10 @@ PARAMS = {
     "exaggeration": 0.5,
     "cfg_weight": 0.5,
     "repetition_penalty": 1.2,
+    "use_phoneme": cfg.use_phoneme,
+    "use_g2p": cfg.use_g2p,
+    "normalize_numbers": cfg.normalize_numbers,
+    "normalize_abbrev": cfg.normalize_abbrev,
 }
 
 
@@ -98,7 +100,7 @@ OUTPUT_FILE = "./output.wav"
 
 def load_finetuned_engine(device):
     """
-    Loads the correct Chatterbox engine (Normal or Turbo) and replaces the T3 module
+    Loads the Vietnamese-only Chatterbox engine and replaces the T3 module
     with the fine-tuned version.
     """
     
@@ -113,6 +115,8 @@ def load_finetuned_engine(device):
     logger.info(f"Initializing new T3 with vocab size: {cfg.new_vocab_size}")
     t3_config = tts_engine.t3.hp
     t3_config.text_tokens_dict_size = cfg.new_vocab_size
+    t3_config.start_text_token = cfg.start_text_token
+    t3_config.stop_text_token = cfg.stop_text_token
   
     new_t3 = T3(hp=t3_config)
 

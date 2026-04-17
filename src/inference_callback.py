@@ -5,7 +5,6 @@ from transformers import TrainerCallback
 from safetensors.torch import load_file
 
 from src.chatterbox_.tts import ChatterboxTTS
-from src.chatterbox_.tts_turbo import ChatterboxTurboTTS
 from src.chatterbox_.models.t3.t3 import T3
 from src.utils import setup_logger, trim_silence_with_vad
 
@@ -68,23 +67,20 @@ class InferenceCallback(TrainerCallback):
 
         
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        is_turbo = getattr(self.config, "is_turbo", False)
-        
-        EngineClass = ChatterboxTurboTTS if is_turbo else ChatterboxTTS
+        EngineClass = ChatterboxTTS
         
         tts_engine = EngineClass.from_local(self.config.model_dir, device="cpu")
         
         t3_config = tts_engine.t3.hp
         if hasattr(self.config, 'new_vocab_size'):
             t3_config.text_tokens_dict_size = self.config.new_vocab_size
+        if hasattr(self.config, "start_text_token"):
+            t3_config.start_text_token = self.config.start_text_token
+        if hasattr(self.config, "stop_text_token"):
+            t3_config.stop_text_token = self.config.stop_text_token
         
         new_t3 = T3(hp=t3_config)
         
-
-        if is_turbo:
-            if hasattr(new_t3.tfmr, "wte"):
-                del new_t3.tfmr.wte
-
 
         if checkpoint_path.endswith(".safetensors"):
             state_dict = load_file(checkpoint_path)
@@ -122,7 +118,7 @@ class InferenceCallback(TrainerCallback):
                 logger.warning(f"Some weights are missing ({len(non_wte_missing)} pieces): {non_wte_missing[:3]}...")
             
             else:
-                logger.info("The weights were successfully loaded (except for the WTE - normal for the Turbo).")
+                logger.info("The weights were successfully loaded.")
         
         else:
             logger.info("All the weights were loaded completely and successfully.")
@@ -140,12 +136,15 @@ class InferenceCallback(TrainerCallback):
         params = {
             "temperature": 0.8,
             "repetition_penalty": 1.2,
+            "use_phoneme": getattr(self.config, "use_phoneme", True),
+            "use_g2p": getattr(self.config, "use_g2p", True),
+            "normalize_numbers": getattr(self.config, "normalize_numbers", True),
+            "normalize_abbrev": getattr(self.config, "normalize_abbrev", True),
         }
 
 
-        if not is_turbo:
-            params["cfg_weight"] = 0.2
-            params["exaggeration"]= 1.2,
+        params["cfg_weight"] = 0.2
+        params["exaggeration"] = 1.2
 
 
         with torch.no_grad():

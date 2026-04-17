@@ -16,3 +16,4 @@ omegaconf
 hf_transfer
 pyloudnorm
 gdown
+g2pV

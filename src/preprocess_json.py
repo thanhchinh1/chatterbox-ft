@@ -5,8 +5,8 @@ import torch
 import torchaudio
 from tqdm import tqdm
 
-from src.chatterbox_.tts_turbo import ChatterboxTurboTTS
 from src.chatterbox_.tts import ChatterboxTTS, punc_norm
+from src.chatterbox_.text_normalizer import normalize_vi_text
 from src.chatterbox_.models.s3tokenizer import S3_SR
 from src.utils import setup_logger
 from src.config import TrainConfig
@@ -99,19 +99,21 @@ def preprocess_dataset_json_based(config, tts_engine: ChatterboxTTS):
                 prompt_tokens = p_tokens.squeeze().cpu()
             
             clean_text = punc_norm(raw_text)
+            if config.vietnamese_only:
+                clean_text = normalize_vi_text(
+                    clean_text,
+                    use_phoneme=config.use_phoneme,
+                    use_g2p=config.use_g2p,
+                    expand_numbers=config.normalize_numbers,
+                    expand_abbrev=config.normalize_abbrev,
+                )
             
-            if config.is_turbo:
-                token_output = tts_engine.tokenizer(clean_text, return_tensors="pt")
-                raw_text_tokens = token_output.input_ids[0].cpu()
-                
-                if tts_engine.tokenizer.eos_token_id is not None:
-                    text_eos = torch.tensor([tts_engine.tokenizer.eos_token_id], dtype=raw_text_tokens.dtype)
-                    text_tokens = torch.cat([raw_text_tokens, text_eos], dim=0)
-                else:
-                    text_tokens = raw_text_tokens
-            
-            else:
-                text_tokens = tts_engine.tokenizer.text_to_tokens(clean_text).squeeze(0).cpu()
+            text_tokens = tts_engine.tokenizer.text_to_tokens(clean_text).squeeze(0).cpu()
+
+            if hasattr(tts_engine.tokenizer, "has_unk_ids") and tts_engine.tokenizer.has_unk_ids(text_tokens):
+                logger.warning(f"UNK tokens detected in text: {file_id}")
+                if config.drop_unk_samples:
+                    continue
             
             save_path = os.path.join(config.preprocessed_dir, f"{file_id}.pt")
             
@@ -137,10 +139,7 @@ if __name__ == "__main__":
 
     cfg = TrainConfig()
     
-    if cfg.is_turbo:
-        EngineClass = ChatterboxTurboTTS
-    else:
-        EngineClass = ChatterboxTTS
+    EngineClass = ChatterboxTTS
     
     logger.info(f"{EngineClass} engine starting...")
     tts_engine = EngineClass.from_local(cfg.model_dir, device="cpu")

@@ -109,29 +109,13 @@ def trim_silence_with_vad(audio_waveform: np.ndarray, sample_rate: int) -> np.nd
 def check_pretrained_models(model_dir="pretrained_models", mode="chatterbox"):
     """Checks for the existence of the necessary model files. """
 
-    if mode == "chatterbox_turbo":
-        required_files = [
-            "ve.safetensors",
-            "t3_turbo_v1.safetensors",
-            "s3gen_meanflow.safetensors",
-            "conds.pt",
-            "vocab.json",
-            "added_tokens.json",
-            "special_tokens_map.json",
-            "tokenizer_config.json",
-            "merges.txt",
-            "grapheme_mtl_merged_expanded_v1.json"
-        ]
-
-    else:
-
-        required_files = [
-            "ve.safetensors",
-            "t3_cfg.safetensors",
-            "s3gen.safetensors",
-            "conds.pt",
-            "tokenizer.json"
-        ]
+    required_files = [
+        "ve.safetensors",
+        "t3_cfg.safetensors",
+        "s3gen.safetensors",
+        "conds.pt",
+        "tokenizer.json"
+    ]
 
 
     missing_files = []

@@ -24,7 +24,6 @@ from .modules.cond_enc import T3CondEnc, T3Cond
 from .modules.t3_config import T3Config
 from .llama_configs import LLAMA_CONFIGS
 from .inference.t3_hf_backend import T3HuggingfaceBackend
-from .inference.alignment_stream_analyzer import AlignmentStreamAnalyzer
 from ..utils import AttrDict
 
 
@@ -298,24 +297,12 @@ class T3(nn.Module):
         # TODO? synchronize the expensive compile function
         # with self.compile_lock:
         if not self.compiled:
-            # Default to None for English models, only create for multilingual
-            alignment_stream_analyzer = None
-            if self.hp.is_multilingual:
-                alignment_stream_analyzer = AlignmentStreamAnalyzer(
-                    self.tfmr,
-                    None,
-                    text_tokens_slice=(len_cond, len_cond + text_tokens.size(-1)),
-                    alignment_layer_idx=9, # TODO: hparam or something?
-                    eos_idx=self.hp.stop_speech_token,
-                )
-                assert alignment_stream_analyzer.eos_idx == self.hp.stop_speech_token
-
             patched_model = T3HuggingfaceBackend(
                 config=self.cfg,
                 llama=self.tfmr,
                 speech_enc=self.speech_emb,
                 speech_head=self.speech_head,
-                alignment_stream_analyzer=alignment_stream_analyzer,
+                alignment_stream_analyzer=None,
             )
             self.patched_model = patched_model
             self.compiled = True
@@ -435,80 +422,3 @@ class T3(nn.Module):
         return predicted_tokens
 
     @torch.inference_mode()
-    def inference_turbo(self, t3_cond, text_tokens, temperature=0.8, top_k=1000, top_p=0.95, repetition_penalty=1.2,
-                        max_gen_len=1000):
-
-        logits_processors = LogitsProcessorList()
-        if temperature > 0 and temperature != 1.0:
-            logits_processors.append(TemperatureLogitsWarper(temperature))
-        if top_k > 0:
-            logits_processors.append(TopKLogitsWarper(top_k))
-        if top_p < 1.0:
-            logits_processors.append(TopPLogitsWarper(top_p))
-        if repetition_penalty != 1.0:
-            logits_processors.append(RepetitionPenaltyLogitsProcessor(repetition_penalty))
-
-
-        speech_start_token = self.hp.start_speech_token * torch.ones_like(text_tokens[:, :1])
-        embeds, _ = self.prepare_input_embeds(
-            t3_cond=t3_cond,
-            text_tokens=text_tokens,
-            speech_tokens=speech_start_token,
-            cfg_weight=0.0,
-        )
-
-        generated_speech_tokens = []
-
-        llm_outputs = self.tfmr(
-            inputs_embeds=embeds,
-            use_cache=True
-        )
-
-        hidden_states = llm_outputs[0]
-        past_key_values = llm_outputs.past_key_values
-
-        speech_hidden = hidden_states[:, -1:]
-        speech_logits = self.speech_head(speech_hidden)
-
-        processed_logits = logits_processors(speech_start_token, speech_logits[:, -1, :])
-        probs = F.softmax(processed_logits, dim=-1)
-        next_speech_token = torch.multinomial(probs, num_samples=1)
-
-        generated_speech_tokens.append(next_speech_token)
-        current_speech_token = next_speech_token
-
-        #for _ in tqdm(range(max_gen_len)):
-        for _ in range(max_gen_len): 
-            current_speech_embed = self.speech_emb(current_speech_token)
-
-            llm_outputs = self.tfmr(
-                inputs_embeds=current_speech_embed,
-                past_key_values=past_key_values,
-                use_cache=True
-            )
-
-            hidden_states = llm_outputs[0]
-            past_key_values = llm_outputs.past_key_values
-            speech_logits = self.speech_head(hidden_states)
-
-            input_ids = torch.cat(generated_speech_tokens, dim=1)
-            processed_logits = logits_processors(input_ids, speech_logits[:, -1, :])
-            if torch.all(processed_logits == -float("inf")):
-                print("Warning: All logits are -inf")
-                break
-
-            probs = F.softmax(processed_logits, dim=-1)
-            next_speech_token = torch.multinomial(probs, num_samples=1)
-
-            generated_speech_tokens.append(next_speech_token)
-            current_speech_token = next_speech_token
-            if torch.all(next_speech_token == self.hp.stop_speech_token):
-                break
-
-        all_tokens = torch.cat(generated_speech_tokens, dim=1)
-
-        # Remove EOS token if present
-        if all_tokens.size(1) > 0 and all_tokens[0, -1] == self.hp.stop_speech_token:
-            all_tokens = all_tokens[:, :-1]
-
-        return all_tokens

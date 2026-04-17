@@ -23,8 +23,6 @@ logger = setup_logger("ChatterboxFinetune")
 def main():
     
     cfg = TrainConfig()
-    if cfg.is_turbo:
-        raise ValueError("This fork supports Standard (Llama/grapheme) mode only. Set is_turbo=False.")
 
     if cfg.force_single_gpu:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.single_gpu_id)
@@ -38,6 +36,9 @@ def main():
         sys.exit(1)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
     
     # 1. Standard-only engine class
     EngineClass = ChatterboxTTS
@@ -58,6 +59,8 @@ def main():
     
     new_t3_config = original_t3_config
     new_t3_config.text_tokens_dict_size = cfg.new_vocab_size
+    new_t3_config.start_text_token = cfg.start_text_token
+    new_t3_config.stop_text_token = cfg.stop_text_token
 
     # We prevent caching during training.
     if hasattr(new_t3_config, "use_cache"):
@@ -120,24 +123,30 @@ def main():
 
 
     # 7. TRAINING ARGUMENTS
+    use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+    use_fp16 = torch.cuda.is_available() and not use_bf16
+
     training_args = TrainingArguments(
         output_dir=cfg.output_dir,
         per_device_train_batch_size=cfg.batch_size,
         gradient_accumulation_steps=cfg.grad_accum,
         learning_rate=cfg.learning_rate,
         num_train_epochs=cfg.num_epochs,
+        warmup_ratio=cfg.warmup_ratio,
         save_strategy="steps",
         save_steps=cfg.save_steps,
         logging_strategy="epoch",
         remove_unused_columns=False, # Required for our custom wrapper
         dataloader_num_workers=cfg.dataloader_num_workers,    
         report_to=["tensorboard"],
-        fp16=False,
-        bf16=True,
+        fp16=use_fp16,
+        bf16=use_bf16,
         save_total_limit=cfg.save_total_limit,
         gradient_checkpointing=True, # This setting theoretically reduces VRAM usage by 60%.
         dataloader_persistent_workers=True,
         dataloader_pin_memory=True,
+        max_grad_norm=cfg.max_grad_norm,
+        seed=cfg.seed,
     )
 
     trainer = Trainer(

@@ -104,10 +104,6 @@ def main():
         
 
     cfg = TrainConfig()
-    if cfg.is_turbo:
-        print("ERROR: This fork only supports Standard (Llama/grapheme) model.")
-        print("Please set is_turbo=False in src/config.py")
-        sys.exit(1)
 
     print(f"Mode: CHATTERBOX-TTS (Standard only, {len(CHATTERBOX_FILES)} files)")
     FILES_TO_DOWNLOAD = CHATTERBOX_FILES
@@ -117,19 +113,13 @@ def main():
         dest_path = os.path.join(DEST_DIR, filename)
         download_file(url, dest_path)
 
-    if cfg.vietnamese_only:
-        vn_vocab_size = apply_vietnamese_only_tokenizer(DEST_DIR)
-        print("\n" + "="*60)
-        print("INSTALLATION COMPLETE (VIETNAMESE-ONLY MODE)")
-        print("All models are set up in 'pretrained_models/' folder.")
-        print("Please set 'new_vocab_size' in 'src/config.py' to:")
-        print(f" {vn_vocab_size}")
-        print("="*60 + "\n")
-        return
-
-    print("\nINSTALLATION COMPLETE (CHATTERBOX-TTS MOD)")
+    vn_vocab_size = apply_vietnamese_only_tokenizer(DEST_DIR)
+    print("\n" + "="*60)
+    print("INSTALLATION COMPLETE (VIETNAMESE-ONLY MODE)")
     print("All models are set up in 'pretrained_models/' folder.")
-    print(f"Note: 'grapheme_mtl_merged_expanded_v1.json' was saved as 'tokenizer.json' for the new vocabulary.")
+    print("Please set 'new_vocab_size' in 'src/config.py' to:")
+    print(f" {vn_vocab_size}")
+    print("="*60 + "\n")
 
 
 

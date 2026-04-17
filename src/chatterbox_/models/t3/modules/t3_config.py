@@ -25,17 +25,3 @@ class T3Config:
     @property
     def n_channels(self):
         return LLAMA_CONFIGS[self.llama_config_name]["hidden_size"]
-    
-    @property
-    def is_multilingual(self):
-        return self.text_tokens_dict_size == 2454
-
-    @classmethod
-    def english_only(cls):
-        """Create configuration for English-only TTS model."""
-        return cls(text_tokens_dict_size=704)
-    
-    @classmethod 
-    def multilingual(cls):
-        """Create configuration for multilingual TTS model."""
-        return cls(text_tokens_dict_size=2454)
