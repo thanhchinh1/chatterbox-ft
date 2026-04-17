@@ -1,70 +1,40 @@
-# Chatterbox: Fine-Tuning Inference Kit for TTS & Turbo 🎙️
+# Chatterbox: Vietnamese Voice Clone (Standard + LJSpeech Only) 🎙️
 
-> ## 🚀 **NEW: Chatterbox Turbo Support ADDED!** 🚀
+> ✅ This fork keeps only **one model path**: **Chatterbox Standard (Llama + grapheme tokenizer)**.
 >
-> This repository now fully supports the fine-tuning of the **Chatterbox Turbo** model!
+> ✅ This fork keeps only **one dataset format**: **LJSpeech** (`metadata.csv` + `wavs/`).
 >
-> *   **What is it?** A faster, GPT-2 based architecture with a strong English foundation.
-> *   **Smart Multi-Language Support:** The setup script **automatically merges** Turbo's large English vocabulary with our custom 23-language grapheme set.
-> *   **The Result:** Get the speed and quality of Turbo while seamlessly fine-tuning on new languages like Turkish, French, Spanish, and more.
->
-> Read the **Standart vs. Turbo Modes** section below for details!
+> ❌ Turbo path and non‑LJSpeech training flows are intentionally disabled.
 
 
 ---
 
-A modular infrastructure for **fine-tuning** both **Chatterbox TTS (Standart)** and **Chatterbox Turbo** models with your own dataset and generating high-quality speech synthesis.
+A modular infrastructure for **Vietnamese voice cloning** using **Chatterbox TTS Standard** with LJSpeech data.
 
 This kit is specially designed to support **new languages** by intelligently extending the model's vocabulary for maximum performance and faster adaptation.
 
 ---
 
+## 🇻🇳 Vietnamese-only fork behavior
 
-## ⚠️ Understanding the Two Modes: Standart vs. Turbo
+This repository is configured as a **Vietnamese-only fine-tuning fork** by default:
 
-This repository operates in two distinct modes, controlled by the `is_turbo` setting in `src/config.py`. Please decide which mode you need before you begin.
+* `src/config.py` enables `vietnamese_only = True`.
+* `setup.py` copies the repository's `tokenizer.json` into `pretrained_models/tokenizer.json`.
+* The copied tokenizer contains Vietnamese characters, digits, and basic punctuation only.
+* `is_turbo` must remain `False` in this fork (Turbo path is disabled).
 
-### 1. Standart Mode (`is_turbo = False`)
-*   **Architecture:** Llama-based.
-*   **Tokenizer:** **Grapheme (character) based.** The `tokenizer.json` downloaded by `setup.py` contains a small, efficient vocabulary (~2,454 tokens) covering 23 languages.
-*   **Best for:** Training a model with full control over a specific language from a more fundamental level.
-
-### 2. Turbo Mode (`is_turbo = True`)
-*   **Architecture:** GPT-2 based.
-*   **Tokenizer:** **BPE-based.** It starts with a large, powerful English vocabulary (~50,000+ tokens).
-*   **Smart Merging:** When you run `setup.py`, this large vocabulary is **automatically extended** with our multi-language grapheme set.
-*   **Best for:** Leveraging a strong English base for faster, high-quality fine-tuning on other languages.
-
+If you want multilingual behavior again, set `vietnamese_only=False` in `src/config.py` and run `python setup.py` again.
 
 ---
 
-## ⚠️ **CRITICAL: Switching Between Training Modes**
+## ⚠️ Fixed workflow in this fork
 
-If you plan to switch between **Standard Mode** (`is_turbo = False`) and **Turbo Mode** (`is_turbo = True`), you **MUST** completely delete the `pretrained_models` directory and the preprocessed_dir directory created with the `preprocess = True` operation before running the `setup.py` file again.
+This fork uses a single training path:
 
-The setup script replaces the token files in place. If you run the setup for Standard mode after setting up for Turbo (or vice versa), the token files will become corrupted and cause errors that are difficult to debug during training.
-
-**Correct Workflow for Changing Modes:**
-
-1. **DELETE the entire `pretrained_models` folder.**
-
-```bash
-
-# On Linux or macOS
-rm -rf pretrained_models
-
-# On Windows (in Command Prompt)
-rmdir /s /q pretrained_models
-```
-2. **Update** the `src/config.py` file, setting the `is_turbo` flag to your desired new mode and setting preprocess = True if it is False.
-
-3. **RUN setup.py again** to download and prepare the correct files for the new mode.
-
-```bash
-python setup.py
-
-```
-4. **Update** the `new_vocab_size` value in the `src/config.py` file with the new value provided by the setup script. Also ensure preprocess = True.
+1. **Model:** Standard (`is_turbo=False`)
+2. **Language:** Vietnamese-only tokenizer
+3. **Dataset format:** LJSpeech only
 
 ---
 
@@ -75,17 +45,11 @@ python setup.py
 This repository uses an **offline preprocessing** strategy to maximize training speed. This script processes all audio files, extracts speaker embeddings and acoustic tokens, and saves them as `.pt` files.
 
 ### 1. Tokenizer and Vocab Size (Most Important)
-Chatterbox uses a grapheme-based (character-level) tokenizer. The `tokenizer.json` file downloaded by `setup.py` includes support for **23 languages** from the original Chatterbox repository, covering most common characters across multiple languages.
+This fork uses a **Vietnamese-only grapheme tokenizer**. During setup, repository `tokenizer.json` is copied to `pretrained_models/tokenizer.json`.
 
-*   **Default Support:** The provided tokenizer already includes characters for English, Turkish, French, German, Spanish, and 18+ other languages
-*   **When to customize:** If your target language has special characters not covered in the default tokenizer, you can create a custom `tokenizer.json`
-*   **Examples of special characters by language:**
-    *   Turkish: `ç, ğ, ş, ö, ü, ı`
-    *   French: `é, è, ê, à, ù, ç`
-    *   German: `ä, ö, ü, ß`
-    *   Spanish: `ñ, á, é, í, ó, ú`
-*   **Critical:** The `NEW_VOCAB_SIZE` variable in both `src/config.py` AND `inference.py` **must exactly match** the total number of tokens in your `tokenizer.json` file
-*   **Default vocab size:** Check the downloaded `tokenizer.json` to see the exact token count, then set `NEW_VOCAB_SIZE` accordingly
+*   **Default Support:** Vietnamese letters (with dấu), digits, and core punctuation.
+*   **Critical:** `new_vocab_size` in `src/config.py` must match the tokenizer token count.
+*   **Default vocab size in this fork:** `201`.
 
 ### 2. Audio Sample Rates
 *   **Training (Input):** Chatterbox's encoder and T3 module work with **16,000 Hz (16kHz)** audio. Even if your dataset uses different rates, `dataset.py` automatically resamples to 16kHz.
@@ -105,9 +69,6 @@ chatterbox-finetune/
 ├── MyTTSDataset/                                  # Your custom dataset in LJSpeech format
 │   ├── metadata.csv                               # Dataset metadata (file|text|normalized_text)
 │   └── wavs/                                      # Directory containing WAV files
-├── FileBasedDataset/                              # Your custom dataset in LJSpeech format
-│   ├── 0a0bc5d3-f195-464a-8716-d6e01fd4784f.txt   # Dataset metadata (text)
-│   └── 0a0bc5d3-f195-464a-8716-d6e01fd4784f.wav   # WAV files
 ├── speaker_reference/                             # Speaker reference audio files
 │   └── reference.wav                              # Reference audio for voice cloning
 ├── src/
@@ -115,7 +76,7 @@ chatterbox-finetune/
 │   ├── dataset.py                                 # Data loading and processing
 │   ├── model.py                                   # Model weight transfer and training wrapper
 |   ├── preprocess_ljspeech.py                     # Preprocessing script
-|   ├── preprocess_file_based.py                   # Preprocessing script
+|   ├── preprocess_file_based.py                   # (legacy, not used in this fork)
 │   └── utils.py                                   # Logger and VAD utilities
 ├── train.py                                       # Main training script
 ├── inference.py                                   # Speech synthesis script (with VAD support)
@@ -160,29 +121,13 @@ pip install -r requirements.txt
 
 
 ### 2. Download & Prepare Models (CRITICAL)
-This multi-step process prepares all necessary files based on your chosen mode. This script downloads the necessary base models (`ve`, `s3gen`, `t3`) and default tokenizer. **Must be run before training.**
-
-**Step 2.1: Choose Your Mode**
-Open `src/config.py` and set the `is_turbo` variable to `True` or `False`.
-
-```python
-# In src/config.py
-is_turbo: bool = True  # Set to True for Turbo, False for Standart```
-```
-
-**Step 2.2: Run the Setup Script**
-This command will download the correct model files. If Turbo mode is enabled, it will also **automatically merge the tokenizers for you.**
+This script downloads Standard model files (`ve`, `s3gen`, `t3`) and then applies Vietnamese tokenizer.
 
 ```bash
 python setup.py
 ```
 
-**Step 2.3: Update Config (Turbo Mode ONLY)**
-If you ran the setup in Turbo mode, the script will output a final message like this:
-
-`Please update the 'new_vocab_size' in 'src/config.py' to the following value: 52260`
-
-Copy this exact number and paste it into the `new_vocab_size` variable in `src/config.py`. **Do not skip this step!**
+After setup, keep `is_turbo=False` and confirm `new_vocab_size=201` in `src/config.py`.
 
 ---
 
